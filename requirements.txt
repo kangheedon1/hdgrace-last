@@ -1,0 +1,22 @@
+# HDGRACE Production Requirements
+# Core dependencies - minimal for production deployment
+
+# Optional dependencies for enhanced functionality
+# Uncomment as needed:
+
+# For YAML support
+# PyYAML>=5.4.0
+
+# For enhanced XML processing
+# lxml>=4.6.0
+
+# For HTTP functionality (if needed)
+# requests>=2.25.0
+
+# Development dependencies (install with: pip install -e .[dev])
+# pytest>=6.0.0
+# pytest-cov>=2.0.0
+# black>=21.0.0
+# flake8>=3.8.0
+# mypy>=0.800
+# pre-commit>=2.0.0

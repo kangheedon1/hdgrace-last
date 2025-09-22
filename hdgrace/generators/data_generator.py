@@ -40,7 +40,7 @@ class DataGenerator(BaseGenerator):
             'map': self._map_data,
             'reduce': self._reduce_data,
             'aggregate': self._aggregate_data,
-            'validate': self._validate_schema,
+            'validate': self._validate_data_processor,
             'transform': self._transform_data,
             'normalize': self._normalize_data,
             'deduplicate': self._deduplicate_data,
@@ -479,3 +479,260 @@ class DataGenerator(BaseGenerator):
     def get_available_generators(self) -> List[str]:
         """Get list of available data generators."""
         return list(self.generators.keys())
+    
+    def _validate_data_processor(self, data: List[Any], **kwargs) -> List[Any]:
+        """Basic data validation processor."""
+        if not isinstance(data, list):
+            raise ValueError("Data must be a list")
+        return data
+    
+    def _transform_data(self, data: List[Any], transformation: str = None, **kwargs) -> List[Any]:
+        """Transform data using specified transformation."""
+        if not transformation:
+            return data
+        
+        # Simple transformations
+        if transformation == 'uppercase' and isinstance(data[0], dict):
+            return [{k: str(v).upper() if isinstance(v, str) else v for k, v in item.items()} for item in data]
+        elif transformation == 'lowercase' and isinstance(data[0], dict):
+            return [{k: str(v).lower() if isinstance(v, str) else v for k, v in item.items()} for item in data]
+        
+        return data
+    
+    def _normalize_data(self, data: List[Any], **kwargs) -> List[Any]:
+        """Normalize data values."""
+        if not data or not isinstance(data[0], dict):
+            return data
+        
+        # Simple normalization: ensure all records have same keys
+        all_keys = set()
+        for item in data:
+            all_keys.update(item.keys())
+        
+        normalized = []
+        for item in data:
+            normalized_item = {key: item.get(key, None) for key in all_keys}
+            normalized.append(normalized_item)
+        
+        return normalized
+    
+    def _deduplicate_data(self, data: List[Any], key: str = None, **kwargs) -> List[Any]:
+        """Remove duplicate records."""
+        if not data:
+            return data
+        
+        if key and isinstance(data[0], dict):
+            seen = set()
+            result = []
+            for item in data:
+                value = item.get(key)
+                if value not in seen:
+                    seen.add(value)
+                    result.append(item)
+            return result
+        else:
+            # Simple deduplication
+            return list({str(item): item for item in data}.values())
+    
+    def _merge_data(self, data: List[Any], other_data: List[Any] = None, **kwargs) -> List[Any]:
+        """Merge two datasets."""
+        if other_data is None:
+            return data
+        return data + other_data
+    
+    def _split_data(self, data: List[Any], ratio: float = 0.5, **kwargs) -> Dict[str, List[Any]]:
+        """Split data into two parts."""
+        split_point = int(len(data) * ratio)
+        return {
+            'first': data[:split_point],
+            'second': data[split_point:]
+        }
+    
+    def _generate_field_value(self, field_type: str, field_params: Dict[str, Any], index: int, distribution: str) -> Any:
+        """Generate value for a specific field type."""
+        import random
+        
+        if field_type == 'string':
+            length = field_params.get('length', 10)
+            chars = 'abcdefghijklmnopqrstuvwxyz'
+            return ''.join(random.choice(chars) for _ in range(length))
+        elif field_type == 'integer':
+            min_val = field_params.get('min', 0)
+            max_val = field_params.get('max', 100)
+            return random.randint(min_val, max_val)
+        elif field_type == 'float':
+            min_val = field_params.get('min', 0.0)
+            max_val = field_params.get('max', 100.0)
+            return round(random.uniform(min_val, max_val), 2)
+        elif field_type == 'boolean':
+            return random.choice([True, False])
+        elif field_type == 'date':
+            from datetime import datetime, timedelta
+            start_date = datetime.now() - timedelta(days=365)
+            random_days = random.randint(0, 365)
+            return (start_date + timedelta(days=random_days)).isoformat()
+        else:
+            return f'value_{index}'
+    
+    def _process_batch(self, batch: List[Any], processors: List[str]) -> List[Any]:
+        """Process a batch of data with specified processors."""
+        result = batch
+        for processor_name in processors:
+            if processor_name in self.processors:
+                processor_func = self.processors[processor_name]
+                result = processor_func(result)
+        return result
+    
+    def _parse_input(self, data: Any, input_format: str) -> List[Any]:
+        """Parse input data based on format."""
+        if input_format == 'json':
+            if isinstance(data, str):
+                return json.loads(data)
+            return data
+        elif input_format == 'csv':
+            # Simple CSV parsing
+            lines = data.strip().split('\n')
+            if len(lines) < 2:
+                return []
+            
+            headers = lines[0].split(',')
+            result = []
+            for line in lines[1:]:
+                values = line.split(',')
+                record = dict(zip(headers, values))
+                result.append(record)
+            return result
+        else:
+            return data if isinstance(data, list) else [data]
+    
+    def _validate_against_schema(self, data: List[Any], schema: Dict[str, Any]) -> List[str]:
+        """Validate data against schema."""
+        errors = []
+        
+        if not isinstance(data, list):
+            errors.append("Data must be a list")
+            return errors
+        
+        for i, record in enumerate(data):
+            if not isinstance(record, dict):
+                errors.append(f"Record {i} must be a dictionary")
+                continue
+            
+            for field_name, field_spec in schema.items():
+                if isinstance(field_spec, dict):
+                    field_type = field_spec.get('type')
+                    required = field_spec.get('required', False)
+                    
+                    if required and field_name not in record:
+                        errors.append(f"Record {i}: Missing required field '{field_name}'")
+                    elif field_name in record:
+                        value = record[field_name]
+                        if field_type == 'string' and not isinstance(value, str):
+                            errors.append(f"Record {i}: Field '{field_name}' must be a string")
+                        elif field_type == 'integer' and not isinstance(value, int):
+                            errors.append(f"Record {i}: Field '{field_name}' must be an integer")
+        
+        return errors
+    
+    def _apply_validation_rule(self, data: List[Any], rule: Dict[str, Any]) -> List[str]:
+        """Apply custom validation rule to data."""
+        errors = []
+        # Simple rule application - can be extended
+        return errors
+    
+    def _generate_sensor_data(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate sensor data."""
+        return {
+            'id': str(uuid.uuid4()),
+            'sensor_type': random.choice(['temperature', 'humidity', 'pressure', 'motion']),
+            'value': round(random.uniform(0, 100), 2),
+            'unit': random.choice(['celsius', 'fahrenheit', 'percent', 'pascal', 'boolean']),
+            'timestamp': datetime.now().isoformat(),
+            'location': f"Room_{random.randint(1, 10)}",
+            **schema
+        }
+    
+    def _generate_financial_data(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate financial data."""
+        return {
+            'id': str(uuid.uuid4()),
+            'account_id': str(uuid.uuid4()),
+            'transaction_type': random.choice(['debit', 'credit', 'transfer']),
+            'amount': round(random.uniform(1, 10000), 2),
+            'currency': random.choice(['USD', 'EUR', 'GBP', 'JPY']),
+            'timestamp': datetime.now().isoformat(),
+            'description': f"Financial transaction {random.randint(1000, 9999)}",
+            **schema
+        }
+    
+    def _generate_healthcare_data(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate healthcare data."""
+        return {
+            'patient_id': str(uuid.uuid4()),
+            'visit_date': datetime.now().isoformat(),
+            'diagnosis': random.choice(['Hypertension', 'Diabetes', 'Influenza', 'Migraine']),
+            'treatment': random.choice(['Medication', 'Therapy', 'Surgery', 'Observation']),
+            'duration_days': random.randint(1, 30),
+            'cost': round(random.uniform(100, 5000), 2),
+            **schema
+        }
+    
+    def _generate_retail_data(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate retail data."""
+        return {
+            'order_id': str(uuid.uuid4()),
+            'customer_id': str(uuid.uuid4()),
+            'product_category': random.choice(['Electronics', 'Clothing', 'Books', 'Food']),
+            'quantity': random.randint(1, 10),
+            'unit_price': round(random.uniform(5, 500), 2),
+            'discount': round(random.uniform(0, 0.3), 2),
+            'order_date': datetime.now().isoformat(),
+            **schema
+        }
+    
+    def _validate_email(self, email: str) -> bool:
+        """Validate email format."""
+        import re
+        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        return bool(re.match(pattern, email))
+    
+    def _validate_phone(self, phone: str) -> bool:
+        """Validate phone number format."""
+        import re
+        # Simple phone validation
+        pattern = r'^\+?1?\d{9,15}$'
+        return bool(re.match(pattern, phone.replace('-', '').replace(' ', '')))
+    
+    def _validate_url(self, url: str) -> bool:
+        """Validate URL format."""
+        import re
+        pattern = r'^https?://(?:[-\w.])+(?:[:\d]+)?(?:/(?:[\w/_.])*(?:\?(?:[\w&=%.])*)?(?:#(?:\w*))?)?$'
+        return bool(re.match(pattern, url))
+    
+    def _validate_date(self, date_str: str) -> bool:
+        """Validate date format."""
+        try:
+            datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            return True
+        except ValueError:
+            return False
+    
+    def _validate_credit_card(self, card_number: str) -> bool:
+        """Validate credit card number using Luhn algorithm."""
+        # Simple validation - just check if it's numeric and reasonable length
+        card_number = card_number.replace(' ', '').replace('-', '')
+        return card_number.isdigit() and 13 <= len(card_number) <= 19
+    
+    def _validate_ssn(self, ssn: str) -> bool:
+        """Validate SSN format."""
+        import re
+        pattern = r'^\d{3}-\d{2}-\d{4}$'
+        return bool(re.match(pattern, ssn))
+    
+    def _validate_uuid(self, uuid_str: str) -> bool:
+        """Validate UUID format."""
+        try:
+            uuid.UUID(uuid_str)
+            return True
+        except ValueError:
+            return False
